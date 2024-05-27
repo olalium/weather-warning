@@ -1,3 +1,5 @@
+use std::{process, thread::sleep, time::Duration};
+
 use dotenv::dotenv;
 use lightning_warning::{
     db::{get_locations, insert_observations},
@@ -16,28 +18,34 @@ async fn main() -> Result<(), Error> {
     let supabase_api =
         std::env::var("SUPABASE_API_PUBLIC").expect("SUPABASE_API_PUBLIC must be set.");
 
-    println!("getting latest observations");
-    let observations = get_latest_observations(&frost_client, &frost_secret).await;
-    let locations = get_locations(&supabase_url, &supabase_api).await;
+    println!("My pid is {}", process::id());
 
-    let mut observations_within_radius = vec![];
-    for observation in observations {
-        if point_is_within_radius(
-            locations[0].latitude,
-            locations[0].longitude,
-            observation.latitude,
-            observation.longitude,
-            &locations[0].radius_km,
-        ) {
-            observations_within_radius.push(observation);
+    loop {
+        println!("getting latest observations");
+        let observations = get_latest_observations(&frost_client, &frost_secret).await;
+        println!("found {} observations", observations.len());
+        let locations = get_locations(&supabase_url, &supabase_api).await;
+
+        let mut observations_within_radius = vec![];
+        for observation in observations {
+            if point_is_within_radius(
+                locations[0].latitude,
+                locations[0].longitude,
+                observation.latitude,
+                observation.longitude,
+                &locations[0].radius_km,
+            ) {
+                observations_within_radius.push(observation);
+            }
         }
+        println!(
+            "{} observations within radius",
+            observations_within_radius.len()
+        );
+        if !observations_within_radius.is_empty() {
+            println!("inserting observations to db",);
+            insert_observations(&supabase_url, &supabase_api, observations_within_radius).await;
+        }
+        sleep(Duration::from_secs(60));
     }
-
-    println!(
-        "inserting {} observations to db",
-        observations_within_radius.len()
-    );
-    insert_observations(&supabase_url, &supabase_api, observations_within_radius).await;
-
-    Ok(())
 }

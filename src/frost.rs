@@ -6,7 +6,7 @@ pub async fn get_latest_observations(frost_client: &str, frost_secret: &str) -> 
 
     let ualf_text_data = client
         .get("https://frost.met.no/lightning/v0.ualf")
-        .query(&[("referencetime", "latest"), ("maxage", "PT1H")])
+        .query(&[("referencetime", "latest"), ("maxage", "PT1M")])
         .basic_auth(frost_client, Some(frost_secret))
         .send()
         .await

@@ -1,16 +1,22 @@
-use std::{process, thread::sleep, time::Duration};
-
 use dotenv::dotenv;
 use lightning_warning::{
-    db::{get_locations, insert_observations},
-    frost::get_latest_observations,
-    location_utils::point_is_within_radius,
+    db::{Database, Observation},
+    frost::get_latest_10m_observations,
+    location_utils::get_observation_within_radius,
+    ualf_buffer::UalfBuffer,
 };
+use log::info;
 use reqwest::Error;
+use std::{process, thread::sleep, time::Duration};
+
+const POLLING_INTERVAL_SECONDS: u64 = 10;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv().ok();
+    env_logger::init();
+
+    info!("My pid is {}", process::id());
 
     let frost_client = std::env::var("FROST_API_CLIENT").expect("FROST_API_CLIENT must be set.");
     let frost_secret = std::env::var("FROST_API_SECRET").expect("FROST_API_SECRET must be set.");
@@ -18,34 +24,46 @@ async fn main() -> Result<(), Error> {
     let supabase_api =
         std::env::var("SUPABASE_API_PUBLIC").expect("SUPABASE_API_PUBLIC must be set.");
 
-    println!("My pid is {}", process::id());
+    let db: Database = Database::init(&supabase_url, &supabase_api);
+    let mut buffer = UalfBuffer::new();
 
     loop {
-        println!("getting latest observations");
-        let observations = get_latest_observations(&frost_client, &frost_secret).await;
-        println!("found {} observations", observations.len());
-        let locations = get_locations(&supabase_url, &supabase_api).await;
+        info!("getting latest 10 minutes of observations");
+        let ualf_observations = get_latest_10m_observations(&frost_client, &frost_secret).await;
 
-        let mut observations_within_radius = vec![];
-        for observation in observations {
-            if point_is_within_radius(
-                locations[0].latitude,
-                locations[0].longitude,
-                observation.latitude,
-                observation.longitude,
-                &locations[0].radius_km,
-            ) {
-                observations_within_radius.push(observation);
+        let unchecked_observations = buffer.get_unchecked_observations(&ualf_observations);
+        info!(
+            "{} new observations ({}/{})",
+            unchecked_observations.len(),
+            unchecked_observations.len(),
+            ualf_observations.len()
+        );
+
+        info!("Getting user locations");
+        let locations = db.get_locations().await.unwrap_or(vec![]);
+        info!("{} user locations found", locations.len());
+
+        let mut observations_within_radius: Vec<Observation> = vec![];
+        for location in &locations {
+            for ualf_observation in &unchecked_observations {
+                match get_observation_within_radius(ualf_observation, location) {
+                    Some(ok) => observations_within_radius.push(ok),
+                    None => (),
+                };
             }
         }
-        println!(
+        info!(
             "{} observations within radius",
             observations_within_radius.len()
         );
         if !observations_within_radius.is_empty() {
-            println!("inserting observations to db",);
-            insert_observations(&supabase_url, &supabase_api, observations_within_radius).await;
+            info!("inserting observations to db",);
+            db.insert_observations(observations_within_radius)
+                .await
+                .unwrap_or(());
+            info!("observations inserted into db")
         }
-        sleep(Duration::from_secs(60));
+        info!("sleeping for {} seconds", POLLING_INTERVAL_SECONDS);
+        sleep(Duration::from_secs(POLLING_INTERVAL_SECONDS));
     }
 }

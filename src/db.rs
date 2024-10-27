@@ -34,13 +34,6 @@ pub struct Prediction {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PredictionInput{}
 
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ClusterLocation {
-    pub id: i64,
-    pub prediction_id: i64,
-    pub location: String // JSONB
-}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClusterLocationInput {
     pub prediction_id: i64,
@@ -135,7 +128,14 @@ impl Database {
         let new_prediction = PredictionInput {};
         let json_new_prediction = serde_json::to_string(&new_prediction).unwrap();
         
-        let prediction_result = self.client.from("predictions").insert(&json_new_prediction).single().execute().await;
+        let prediction_result = self
+            .client
+            .from("predictions")
+            .insert(&json_new_prediction)
+            .single()
+            .execute()
+            .await;
+        
         let response = match prediction_result {
             Ok(res) => res,
             Err(err) => {

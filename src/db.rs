@@ -1,8 +1,10 @@
 use std::error::Error;
 
-use log::error;
+use log::{error, info};
 use postgrest::Postgrest;
 use serde::{Deserialize, Serialize};
+
+use crate::dbscan::DbscanCluster;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserLocation {
@@ -24,14 +26,49 @@ pub struct Observation {
     pub location_id: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Prediction {
+    pub id: i64,
+    pub created_at: String
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PredictionInput{}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClusterLocation {
+    pub id: i64,
+    pub prediction_id: i64,
+    pub location: String // JSONB
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClusterLocationInput {
+    pub prediction_id: i64,
+    pub location: String // JSONB
+}
+
 pub struct Database {
     pub client: Postgrest,
+    base_url: String,
+    api_key: String,
+}
+
+impl Clone for Database {
+    fn clone(&self) -> Self {
+        Database {
+            client: Postgrest::new(&self.base_url).insert_header("apiKey", &self.api_key),
+            base_url: self.base_url.clone(),
+            api_key: self.api_key.clone(),
+        }
+    }
 }
 
 impl Database {
     pub fn init(supabase_url: &str, supabase_api: &str) -> Database {
         return Database {
-            client: Postgrest::new(supabase_url).insert_header("apiKey", supabase_api.clone()),
+            client: Postgrest::new(supabase_url).insert_header("apiKey", supabase_api),
+            base_url: supabase_url.to_string(),
+            api_key: supabase_api.to_string(),
         };
     }
 
@@ -89,6 +126,72 @@ impl Database {
             Ok(locations) => Ok(locations),
             Err(err) => {
                 error!("Unable to deserialize locations: {}", err);
+                return Err(err.into());
+            }
+        }
+    }
+
+    pub async fn insert_prediction(&self, clusters: Vec<DbscanCluster>) -> Result<(), Box<dyn Error>> {
+        let new_prediction = PredictionInput {};
+        let json_new_prediction = serde_json::to_string(&new_prediction).unwrap();
+        
+        let prediction_result = self.client.from("predictions").insert(&json_new_prediction).single().execute().await;
+        let response = match prediction_result {
+            Ok(res) => res,
+            Err(err) => {
+                error!("Unable to create prediction: {}", err);
+                return Err(err.into());
+            }
+        };
+
+        let response_text = match response.text().await {
+            Ok(text) => text,
+            Err(err) => {
+                error!("Unable to get response string: {}", err);
+                return Err(err.into());
+            }
+        };
+
+        let prediction_result: Result<Prediction, serde_json::Error> =
+            serde_json::from_str(&response_text);
+
+        let prediction = match prediction_result {
+            Ok(prediction) => prediction,
+            Err(err) => {
+                info!("prediction result text is; {}", response_text);
+                error!("Unable to deserialize prediction: {}", err);
+                return Err(err.into());
+            }
+        };
+
+
+        let mut cluster_locations: Vec<ClusterLocationInput> = vec![];
+        for cluster in clusters {
+            cluster_locations.push( ClusterLocationInput {
+                prediction_id: prediction.id,
+                location: cluster.convex_hull_geo_json()
+            });
+        }
+
+        let json_cluster_locations = match serde_json::to_string(&cluster_locations) {
+            Ok(json_str) => json_str,
+            Err(err) => {
+                error!("Unable to serialize cluster locations: {}", err);
+                return Err(err.into());
+            }
+        };
+
+        let response = self
+            .client
+            .from("cluster_locations")
+            .insert(&json_cluster_locations)
+            .execute()
+            .await;
+
+        match response {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                error!("Unable to write cluster locations to db: {}", err);
                 return Err(err.into());
             }
         }

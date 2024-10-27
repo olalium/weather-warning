@@ -3,7 +3,6 @@ use std::error;
 use std::error::Error;
 
 use crate::ualf::UalfData;
-use log::warn;
 use reqwest::Client;
 
 #[derive(Debug)]
@@ -36,19 +35,23 @@ impl From<reqwest::Error> for FrostError {
     }
 }
 
-pub async fn get_latest_10m_observations(frost_client: &str, frost_secret: &str) -> Result<Vec<UalfData>, FrostError> {
+
+async fn get_observations(
+    frost_client: &str, 
+    frost_secret: &str, 
+    max_age: &str
+) -> Result<Vec<UalfData>, FrostError> {
     let client = Client::new();
 
     let response = client
         .get("https://frost.met.no/lightning/v0.ualf")
-        .query(&[("referencetime", "latest"), ("maxage", "PT10M")])
+        .query(&[("referencetime", "latest"), ("maxage", max_age)])
         .basic_auth(frost_client, Some(frost_secret))
         .send()
         .await?;
     let ualf_text_data = response.text().await?;
 
     if ualf_text_data.starts_with("{") {
-        warn!("Something went wrong: {}", ualf_text_data);
         return Err(FrostError::ApiError(ualf_text_data));
     }
 
@@ -59,4 +62,18 @@ pub async fn get_latest_10m_observations(frost_client: &str, frost_secret: &str)
         .collect();
 
     Ok(observations)
+}
+
+pub async fn get_latest_10m_observations(
+    frost_client: &str, 
+    frost_secret: &str
+) -> Result<Vec<UalfData>, FrostError> {
+    get_observations(frost_client, frost_secret, "PT10M").await
+}
+
+pub async fn get_latest_1h_observations(
+    frost_client: &str, 
+    frost_secret: &str
+) -> Result<Vec<UalfData>, FrostError> {
+    get_observations(frost_client, frost_secret, "PT1H").await
 }

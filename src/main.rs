@@ -1,15 +1,16 @@
 use dotenv::dotenv;
 use lightning_warning::{
     db::{Database, Observation},
-    frost::get_latest_10m_observations,
+    frost::{get_latest_10m_observations, FrostError},
     location_utils::get_observation_within_radius,
     ualf_buffer::UalfBuffer,
 };
-use log::info;
+use log::{error, info};
 use reqwest::Error;
 use std::{process, thread::sleep, time::Duration};
 
 const POLLING_INTERVAL_SECONDS: u64 = 10;
+const ERROR_INTERVAL_SECONDS: u64 = POLLING_INTERVAL_SECONDS * 5;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -29,7 +30,18 @@ async fn main() -> Result<(), Error> {
 
     loop {
         info!("getting latest 10 minutes of observations");
-        let ualf_observations = get_latest_10m_observations(&frost_client, &frost_secret).await;
+        let ualf_observations = match get_latest_10m_observations(&frost_client, &frost_secret).await {
+            Ok(observations) => observations,
+            Err(e) => {
+                match e {
+                    FrostError::ApiError(msg) => error!("Failed to fetch observations: {}", msg),
+                    FrostError::RequestError(e) => error!("Frost API error: {}", e)
+                }
+                info!("sleeping for {} seconds", ERROR_INTERVAL_SECONDS);
+                sleep(Duration::from_secs(ERROR_INTERVAL_SECONDS));
+                continue;
+            },
+        };
 
         let unchecked_observations = buffer.get_unchecked_observations(&ualf_observations);
         info!(

@@ -1,24 +1,55 @@
+use std::fmt;
+use std::error;
+use std::error::Error;
+
 use crate::ualf::UalfData;
 use log::warn;
 use reqwest::Client;
 
-pub async fn get_latest_10m_observations(frost_client: &str, frost_secret: &str) -> Vec<UalfData> {
+#[derive(Debug)]
+pub enum FrostError {
+    RequestError(reqwest::Error),
+    ApiError(String),
+}
+
+impl fmt::Display for FrostError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result  {
+        match self {
+            FrostError::RequestError(e) => write!(f, "HTTP request failed: {}", e),
+            FrostError::ApiError(msg) => write!(f, "API error response: {}", msg)
+        }
+    }
+}
+
+impl error::Error for FrostError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            FrostError::RequestError(e) => Some(e),
+            FrostError::ApiError(_) => None,
+        }
+    }
+}
+
+impl From<reqwest::Error> for FrostError {
+    fn from(err: reqwest::Error) -> FrostError {
+        FrostError::RequestError(err)
+    }
+}
+
+pub async fn get_latest_10m_observations(frost_client: &str, frost_secret: &str) -> Result<Vec<UalfData>, FrostError> {
     let client = Client::new();
 
-    let ualf_text_data = client
+    let response = client
         .get("https://frost.met.no/lightning/v0.ualf")
         .query(&[("referencetime", "latest"), ("maxage", "PT10M")])
         .basic_auth(frost_client, Some(frost_secret))
         .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
+        .await?;
+    let ualf_text_data = response.text().await?;
 
     if ualf_text_data.starts_with("{") {
         warn!("Something went wrong: {}", ualf_text_data);
-        return vec![];
+        return Err(FrostError::ApiError(ualf_text_data));
     }
 
     let observations: Vec<UalfData> = ualf_text_data
@@ -27,5 +58,5 @@ pub async fn get_latest_10m_observations(frost_client: &str, frost_secret: &str)
         .filter_map(UalfData::from_string)
         .collect();
 
-    return observations;
+    Ok(observations)
 }

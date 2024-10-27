@@ -75,5 +75,5 @@ pub async fn get_latest_1h_observations(
     frost_client: &str, 
     frost_secret: &str
 ) -> Result<Vec<UalfData>, FrostError> {
-    get_observations(frost_client, frost_secret, "PTH").await
+    get_observations(frost_client, frost_secret, "PT1H").await
 }

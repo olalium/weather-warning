@@ -131,7 +131,7 @@ impl Database {
         }
     }
 
-    pub async fn insert_prediction(&self, clusters: Vec<DbscanCluster>) -> Result<(), Box<dyn Error>> {
+    pub async fn insert_prediction_and_remove_old(&self, clusters: Vec<DbscanCluster>) -> Result<(), Box<dyn Error>> {
         let new_prediction = PredictionInput {};
         let json_new_prediction = serde_json::to_string(&new_prediction).unwrap();
         
@@ -189,9 +189,25 @@ impl Database {
             .await;
 
         match response {
-            Ok(_) => Ok(()),
+            Ok(_) => (),
             Err(err) => {
                 error!("Unable to write cluster locations to db: {}", err);
+                return Err(err.into());
+            }
+        }
+
+        let response = self
+            .client
+            .from("predictions")
+            .not("eq", "id", prediction.id.to_string())
+            .delete()
+            .execute()
+            .await;
+
+        match response {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                error!("Unable to remove old predictions: {}", err);
                 return Err(err.into());
             }
         }

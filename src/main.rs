@@ -14,7 +14,6 @@ const POLLING_INTERVAL_SECONDS: u64 = 10;
 const ERROR_INTERVAL_SECONDS: u64 = POLLING_INTERVAL_SECONDS * 5;
 const PREDICITON_INTERVAL_SECONDS: u64 = 60;
 
-
 async fn observation_loop(
     frost_client: String,
     frost_secret: String,
@@ -108,7 +107,7 @@ async fn prediction_loop(
         info!("[PREDICTION] Found {} clusters", clustered_observations.len());
 
         if !clustered_observations.is_empty() {
-            db.insert_prediction(clustered_observations).await.unwrap_or(());
+            db.insert_prediction_and_remove_old(clustered_observations).await.unwrap_or(());
         }
 
         info!("[PREDICTION] sleeping for {} seconds", PREDICITON_INTERVAL_SECONDS);

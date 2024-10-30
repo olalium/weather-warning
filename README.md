@@ -19,5 +19,5 @@ You will need to setup a Supabase project for this program to run properly. You 
 FROST_API_CLIENT=your_frost_client_id
 FROST_API_SECRET=your_frost_api_secret
 SUPABASE_URL=your_supabase_url
-SUPABASE_API_PUBLIC=your_supabase_public_key
+SUPABASE_API_SERVICE_ROLE=your_supabase_public_key
 ```

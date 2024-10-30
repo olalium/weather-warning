@@ -29,15 +29,15 @@ pub struct Observation {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Prediction {
     pub id: i64,
-    pub created_at: String
+    pub created_at: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PredictionInput{}
+pub struct PredictionInput {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClusterLocationInput {
     pub prediction_id: i64,
-    pub location: String // JSONB
+    pub location: String, // JSONB
 }
 
 pub struct Database {
@@ -49,7 +49,9 @@ pub struct Database {
 impl Clone for Database {
     fn clone(&self) -> Self {
         Database {
-            client: Postgrest::new(&self.base_url).insert_header("apiKey", &self.api_key),
+            client: Postgrest::new(&self.base_url)
+                .insert_header("apikey", &self.api_key)
+                .insert_header("Authorization", format!("Bearer {}", &self.api_key)),
             base_url: self.base_url.clone(),
             api_key: self.api_key.clone(),
         }
@@ -59,7 +61,9 @@ impl Clone for Database {
 impl Database {
     pub fn init(supabase_url: &str, supabase_api: &str) -> Database {
         return Database {
-            client: Postgrest::new(supabase_url).insert_header("apiKey", supabase_api),
+            client: Postgrest::new(supabase_url)
+                .insert_header("apikey", supabase_api)
+                .insert_header("Authorization", format!("Bearer {}", supabase_api)),
             base_url: supabase_url.to_string(),
             api_key: supabase_api.to_string(),
         };
@@ -124,10 +128,13 @@ impl Database {
         }
     }
 
-    pub async fn insert_prediction_and_remove_old(&self, clusters: Vec<DbscanCluster>) -> Result<(), Box<dyn Error>> {
+    pub async fn insert_prediction_and_remove_old(
+        &self,
+        clusters: Vec<DbscanCluster>,
+    ) -> Result<(), Box<dyn Error>> {
         let new_prediction = PredictionInput {};
         let json_new_prediction = serde_json::to_string(&new_prediction).unwrap();
-        
+
         let prediction_result = self
             .client
             .from("predictions")
@@ -135,7 +142,7 @@ impl Database {
             .single()
             .execute()
             .await;
-        
+
         let response = match prediction_result {
             Ok(res) => res,
             Err(err) => {
@@ -164,12 +171,11 @@ impl Database {
             }
         };
 
-
         let mut cluster_locations: Vec<ClusterLocationInput> = vec![];
         for cluster in clusters {
-            cluster_locations.push( ClusterLocationInput {
+            cluster_locations.push(ClusterLocationInput {
                 prediction_id: prediction.id,
-                location: cluster.convex_hull_geo_json()
+                location: cluster.convex_hull_geo_json(),
             });
         }
 
